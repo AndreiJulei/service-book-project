@@ -1,0 +1,15 @@
+{
+  "scripts": {
+    "test:e2e": "cd /tmp/playwright-test && npx playwright test",
+    "test:e2e:ui": "cd /tmp/playwright-test && npx playwright test --ui",
+    "test:e2e:headed": "cd /tmp/playwright-test && npx playwright test --headed"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
+    "@vitest/coverage-v8": "^4.1.2",
+    "jsdom": "^29.0.1",
+    "vitest": "^4.1.2"
+  }
+}
