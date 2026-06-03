@@ -170,13 +170,13 @@ class TestServiceValidation:
         data = _valid_input()
         data["service"] = "X"
         errors = validate_appointment_input(data, VALID_EMPLOYEE_IDS, [])
-        assert errors["service"] == "Service must be between 2 and 60 characters"
+        assert errors["service"] == "Service must be between 2 and 100 characters"
 
     def test_too_long(self):
         data = _valid_input()
-        data["service"] = "S" * 61
+        data["service"] = "S" * 101
         errors = validate_appointment_input(data, VALID_EMPLOYEE_IDS, [])
-        assert errors["service"] == "Service must be between 2 and 60 characters"
+        assert errors["service"] == "Service must be between 2 and 100 characters"
 
     def test_not_a_string(self):
         data = _valid_input()
@@ -349,12 +349,6 @@ class TestEmployeeIdValidation:
         data["employee_id"] = "999"
         errors = validate_appointment_input(data, VALID_EMPLOYEE_IDS, [])
         assert errors["employee_id"] == "Employee is not valid"
-
-    def test_not_a_string(self):
-        data = _valid_input()
-        data["employee_id"] = 1
-        errors = validate_appointment_input(data, VALID_EMPLOYEE_IDS, [])
-        assert errors["employee_id"] == "Employee is required"
 
 
 # ---------------------------------------------------------------------------

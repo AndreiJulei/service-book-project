@@ -1,162 +1,178 @@
 """
-In-memory repository for Appointments and Employees.
-
-All data lives in Python lists — no database, no file I/O, no persistence.
-Data resets every time the server restarts.
+SQLAlchemy repository for Appointments and Employees.
 """
 
-import copy
-
-from models import Appointment, Employee
+from models import db, Appointment, Employee
 from validators import validate_appointment_input
-
-
-# ---------------------------------------------------------------------------
-# Seed data — matches the TypeScript EMPLOYEES and INITIAL_APPOINTMENTS
-# ---------------------------------------------------------------------------
-
-SEED_EMPLOYEES: list[Employee] = [
-    Employee(id="1", name="Marcus Chen",   color="#8FAF8A"),
-    Employee(id="2", name="Sarah Williams", color="#6B7F5F"),
-    Employee(id="3", name="Jake Morrison",  color="#50C878"),
-    Employee(id="4", name="Emily Zhang",    color="#4A7C59"),
-]
-
-SEED_APPOINTMENTS: list[Appointment] = [
-    Appointment(id=1, client_name="John Doe",      service="Haircut",   start_time=9,    duration=1,    reliability_score=85, employee_id="1"),
-    Appointment(id=2, client_name="Jane Smith",     service="Coloring",  start_time=10.5, duration=2,    reliability_score=92, employee_id="1"),
-    Appointment(id=3, client_name="Bob Johnson",    service="Shave",     start_time=9.5,  duration=0.75, reliability_score=35, employee_id="2"),
-    Appointment(id=4, client_name="Alice Brown",    service="Styling",   start_time=11,   duration=1.5,  reliability_score=78, employee_id="2"),
-    Appointment(id=5, client_name="Charlie Davis",  service="Haircut",   start_time=10,   duration=1,    reliability_score=45, employee_id="3"),
-    Appointment(id=6, client_name="Diana Evans",    service="Treatment", start_time=13,   duration=2,    reliability_score=95, employee_id="3"),
-]
-
-
-# ---------------------------------------------------------------------------
-# Repository
-# ---------------------------------------------------------------------------
 
 class AppointmentRepository:
     """
-    In-memory CRUD repository for appointments.
-
-    Stores everything in a plain Python list.
-    Thread-safety is not a concern for this assignment.
+    SQLAlchemy-backed repository.
     """
 
-    def __init__(
-        self,
-        seed_appointments: list[Appointment] | None = None,
-        seed_employees: list[Employee] | None = None,
-    ):
-        self._employees: list[Employee] = copy.deepcopy(seed_employees if seed_employees is not None else SEED_EMPLOYEES)
-        self._appointments: list[Appointment] = copy.deepcopy(seed_appointments if seed_appointments is not None else SEED_APPOINTMENTS)
-        # Next auto-increment ID = max existing ID + 1
-        if self._appointments:
-            self._next_id: int = max(a.id for a in self._appointments) + 1
-        else:
-            self._next_id: int = 1
-
-    # -- Employee helpers --------------------------------------------------
+    def __init__(self, *args, **kwargs):
+        pass
 
     @property
     def employee_ids(self) -> list[str]:
-        return [e.id for e in self._employees]
+        employees = db.session.query(Employee).all()
+        return [str(e.id) for e in employees]
 
-    def list_employees(self) -> list[Employee]:
-        return list(self._employees)
+    def list_employees(self):
+        return db.session.query(Employee).all()
 
-    # -- Appointment CRUD --------------------------------------------------
-
-    def list_appointments(self) -> list[Appointment]:
+    def list_appointments(self):
         """Return all appointments sorted by employee_id then start_time."""
-        return sorted(
-            self._appointments,
-            key=lambda a: (a.employee_id, a.start_time),
-        )
+        return db.session.query(Appointment).order_by(Appointment.employee_id, Appointment.start_time).all()
 
     def list_appointments_paginated(
         self,
         page: int = 1,
         page_size: int = 10,
-    ) -> tuple[list[Appointment], int]:
+    ) -> tuple[list, int]:
         """
         Return a page of appointments plus the total count.
-
-        Args:
-            page:      1-indexed page number (defaults to 1).
-            page_size: number of items per page (defaults to 10).
-
-        Returns:
-            (items_on_this_page, total_count)
         """
-        all_sorted = self.list_appointments()
-        total = len(all_sorted)
+        query = db.session.query(Appointment).order_by(Appointment.employee_id, Appointment.start_time)
+        total = query.count()
         start = (page - 1) * page_size
-        end = start + page_size
-        return all_sorted[start:end], total
+        items = query.offset(start).limit(page_size).all()
+        return items, total
 
-    def get_by_id(self, appointment_id: int) -> Appointment | None:
-        for appt in self._appointments:
-            if appt.id == appointment_id:
-                return appt
-        return None
+    def get_by_id(self, appointment_id: int):
+        return db.session.query(Appointment).filter_by(id=appointment_id).first()
 
-    def create(self, data: dict) -> Appointment | dict[str, str]:
+    def create(self, data: dict):
         """
         Validate and create a new appointment.
-
-        Returns the created Appointment on success,
-        or a dict of field errors on validation failure.
         """
+        employee_id = int(data.get("employee_id", 0)) if str(data.get("employee_id")).isdigit() else 0
+        date = data.get("date")
+        
+        # Resolve service name from service_ids before validating
+        booked_services = []
+        if "service_ids" in data:
+            from models import Service
+            s_ids = [int(i) for i in data["service_ids"]]
+            booked_services = db.session.query(Service).filter(Service.id.in_(s_ids)).all()
+            if booked_services:
+                joined_name = ", ".join(s.name for s in booked_services)
+                if len(joined_name) > 100:
+                    joined_name = joined_name[:97] + "..."
+                data["service"] = joined_name
+        
+        # Filter existing appointments by date so overlap check applies on same day
+        existing_appts = db.session.query(Appointment).filter(
+            Appointment.employee_id == employee_id,
+            Appointment.date == date,
+            Appointment.status != 'cancelled'
+        ).all()
+        
         errors = validate_appointment_input(
-            data, self.employee_ids, self._appointments
+            data, self.employee_ids, existing_appts
         )
         if errors:
             return errors
 
         appointment = Appointment(
-            id=self._next_id,
             client_name=data["client_name"].strip(),
-            service=data["service"].strip(),
+            service=data.get("service", "").strip(),
             start_time=data["start_time"],
             duration=data["duration"],
             reliability_score=int(data["reliability_score"]),
-            employee_id=data["employee_id"],
+            employee_id=int(data["employee_id"]),
+            date=date,
+            client_user_id=data.get("client_user_id"),
+            status=data.get("status", "confirmed")
         )
-        self._next_id += 1
-        self._appointments.append(appointment)
+        if booked_services:
+            appointment.booked_services = booked_services
+            
+        db.session.add(appointment)
+        db.session.commit()
         return appointment
 
-    def update(self, appointment_id: int, data: dict) -> Appointment | dict[str, str] | None:
+    def update(self, appointment_id: int, data: dict):
         """
         Validate and update an existing appointment.
-
-        Returns:
-            - Updated Appointment on success
-            - dict of field errors on validation failure
-            - None if the appointment was not found
         """
         existing = self.get_by_id(appointment_id)
         if existing is None:
             return None
 
+        employee_id = int(data.get("employee_id", 0)) if str(data.get("employee_id")).isdigit() else 0
+        date = data.get("date")
+        
+        # Resolve service name from service_ids before validating
+        booked_services = []
+        if "service_ids" in data:
+            from models import Service
+            s_ids = [int(i) for i in data["service_ids"]]
+            booked_services = db.session.query(Service).filter(Service.id.in_(s_ids)).all()
+            if booked_services:
+                joined_name = ", ".join(s.name for s in booked_services)
+                if len(joined_name) > 100:
+                    joined_name = joined_name[:97] + "..."
+                data["service"] = joined_name
+
+        # Filter by date so overlap check applies on same day
+        existing_appts = db.session.query(Appointment).filter(
+            Appointment.employee_id == employee_id,
+            Appointment.date == date,
+            Appointment.status != 'cancelled'
+        ).all()
+
         errors = validate_appointment_input(
-            data, self.employee_ids, self._appointments, current_id=appointment_id
+            data, self.employee_ids, existing_appts, current_id=appointment_id
         )
         if errors:
             return errors
 
         existing.client_name = data["client_name"].strip()
-        existing.service = data["service"].strip()
+        existing.service = data.get("service", "").strip() if data.get("service") else existing.service
         existing.start_time = data["start_time"]
         existing.duration = data["duration"]
         existing.reliability_score = int(data["reliability_score"])
-        existing.employee_id = data["employee_id"]
+        existing.employee_id = int(data["employee_id"])
+        existing.date = date
+        if "client_user_id" in data:
+            existing.client_user_id = data["client_user_id"]
+        if "status" in data:
+            existing.status = data["status"]
+        if booked_services:
+            existing.booked_services = booked_services
+        
+        db.session.commit()
         return existing
 
     def delete(self, appointment_id: int) -> bool:
-        """Delete an appointment by ID. Returns True if it was found and removed."""
-        before = len(self._appointments)
-        self._appointments = [a for a in self._appointments if a.id != appointment_id]
-        return len(self._appointments) < before
+        """Delete an appointment by ID."""
+        appt = self.get_by_id(appointment_id)
+        if appt:
+            db.session.delete(appt)
+            db.session.commit()
+            return True
+        return False
+
+    # Additional methods mentioned in the implementation plan:
+    def create_appointment(self, data: dict) -> tuple:
+        res = self.create(data)
+        if isinstance(res, dict) and "client_name" in res:  # Error dict
+            return None, res
+        return res.to_dict() if res else None, None
+
+    def update_appointment(self, appointment_id: int, data: dict) -> tuple:
+        res = self.update(appointment_id, data)
+        if res is None:
+            return None, None, False
+        if isinstance(res, dict) and "client_name" in res:
+            return None, res, True
+        return res.to_dict(), None, True
+
+    def delete_appointment(self, appointment_id: int) -> bool:
+        return self.delete(appointment_id)
+
+    def get_appointment(self, appointment_id: int):
+        res = self.get_by_id(appointment_id)
+        return res.to_dict() if res else None
+

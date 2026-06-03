@@ -37,7 +37,7 @@ def _has_overlap(
     """Check if a proposed time slot overlaps any existing appointment for the same employee."""
     end_b = start_time + duration
     for appt in appointments:
-        if appt.employee_id != employee_id:
+        if str(appt.employee_id) != str(employee_id):
             continue
         if exclude_id is not None and appt.id == exclude_id:
             continue
@@ -76,8 +76,8 @@ def validate_appointment_input(
         errors["service"] = "Service is required"
     else:
         trimmed = service.strip()
-        if len(trimmed) < 2 or len(trimmed) > 60:
-            errors["service"] = "Service must be between 2 and 60 characters"
+        if len(trimmed) < 2 or len(trimmed) > 100:
+            errors["service"] = "Service must be between 2 and 100 characters"
 
     # --- start_time ---
     start_time = data.get("start_time")
@@ -108,9 +108,9 @@ def validate_appointment_input(
 
     # --- employee_id ---
     employee_id = data.get("employee_id")
-    if not employee_id or not isinstance(employee_id, str):
+    if not employee_id or not isinstance(employee_id, (str, int)):
         errors["employee_id"] = "Employee is required"
-    elif employee_id not in employee_ids:
+    elif str(employee_id) not in employee_ids:
         errors["employee_id"] = "Employee is not valid"
 
     # --- overlap check (only when start_time, duration, and employee_id are all valid) ---
