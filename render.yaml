@@ -2,7 +2,7 @@ services:
   - type: web
     name: servicebook-backend
     env: python
-    rootDirectory: backend
+    rootDir: backend
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn "app:create_app()" --bind 0.0.0.0:$PORT
     envVars:
