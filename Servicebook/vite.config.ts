@@ -17,10 +17,12 @@ export default defineConfig({
     },
   },
   server: {
-    https: {
-      key: fs.readFileSync(new URL('../backend/key.pem', import.meta.url)),
-      cert: fs.readFileSync(new URL('../backend/cert.pem', import.meta.url)),
-    },
+    https: (fs.existsSync(new URL('../backend/key.pem', import.meta.url)) && fs.existsSync(new URL('../backend/cert.pem', import.meta.url)))
+      ? {
+          key: fs.readFileSync(new URL('../backend/key.pem', import.meta.url)),
+          cert: fs.readFileSync(new URL('../backend/cert.pem', import.meta.url)),
+        }
+      : undefined,
     proxy: {
       '/api': {
         target: 'https://127.0.0.1:5001',
